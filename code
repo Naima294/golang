@@ -1,0 +1,76 @@
+package main
+
+import (
+    "encoding/json"
+    "fmt"
+    "net/http"
+    "regexp"
+
+    "github.com/Knetic/govaluate"
+)
+
+type Request struct {
+    Expression string json:"expression" // Исправлено добавление обратных кавычек
+}
+
+type Response struct {
+    Result string json:"result,omitempty" // Исправлено добавление обратных кавычек
+    Error  string json:"error,omitempty"  // Исправлено добавление обратных кавычек
+}
+
+func main() {
+    http.HandleFunc("/api/v1/calculate", calculateHandler)
+    fmt.Println("Server is running on port 8080...")
+    if err := http.ListenAndServe(":8080", nil); err != nil {
+        fmt.Printf("Error starting server: %v\n", err)
+    }
+}
+
+func calculateHandler(w http.ResponseWriter, r *http.Request) {
+    if r.Method != http.MethodPost {
+        http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+        return
+    }
+    var req Request
+    if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+        respondWithError(w, "Internal server error", http.StatusInternalServerError)
+        return
+    }
+
+    if !isValidExpression(req.Expression) {
+        respondWithError(w, "Expression is not valid", http.StatusUnprocessableEntity)
+        return
+    }
+    
+    result, err := evaluateExpression(req.Expression)
+    if err != nil {
+        respondWithError(w, "Internal server error", http.StatusInternalServerError)
+        return
+    }
+    
+    respondWithResult(w, result)
+}
+
+func isValidExpression(expression string) bool {
+    // Регулярное выражение для проверки допустимых символов
+    validExpression := regexp.MustCompile(^[0-9+-*/().s]+$) // Исправлено: добавлены кавычки
+    return validExpression.MatchString(expression)
+}
+
+func evaluateExpression(expression string) (string, error) {
+    result, err := govaluate.Evaluate(expression, nil)
+    if err != nil {
+        return "", err
+    }
+    return fmt.Sprintf("%v", result), nil
+}
+
+func respondWithResult(w http.ResponseWriter, result string) {
+    w.WriteHeader(http.StatusOK)
+    json.NewEncoder(w).Encode(Response{Result: result})
+}
+
+func respondWithError(w http.ResponseWriter, message string, statusCode int) {
+    w.WriteHeader(statusCode)
+    json.NewEncoder(w).Encode(Response{Error: message})
+}
